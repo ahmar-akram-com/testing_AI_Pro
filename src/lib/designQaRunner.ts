@@ -34,11 +34,19 @@ export async function runDesignQA(body: any) {
 
   console.log(`[QA] Checking Figma token for file ${fileId}`);
   if (!IS_SERVERLESS) await figmaService.checkToken();
-  console.log('[QA] Extracting Figma nodes');
-  const figmaNodes = await figmaService.extractFile(fileId, { nodeId, pageName: figmaPageName });
-  console.log(`[QA] Figma nodes extracted: ${figmaNodes.length}`);
 
   if (IS_SERVERLESS) {
+    // On Vercel we fight the 10s hobby timeout: start the HTML fetch in
+    // parallel with the Figma extraction so the round-trip latencies overlap.
+    console.log('[QA] Extracting Figma nodes + fetching target HTML in parallel');
+    const htmlPromise = fetchTargetHtml(pageUrl).catch((error) => {
+      console.error('[QA] Target HTML fetch failed:', error?.message || error);
+      return '';
+    });
+    const figmaNodes = await figmaService.extractFile(fileId, { nodeId, pageName: figmaPageName });
+    console.log(`[QA] Figma nodes extracted: ${figmaNodes.length}`);
+    const html = await htmlPromise;
+    console.log(`[QA] Target HTML received: ${html.length} bytes`);
     return runFastServerlessQA({
       figmaNodes,
       fileId,
@@ -46,8 +54,13 @@ export async function runDesignQA(body: any) {
       figmaService,
       mappingEngine,
       comparisonEngine,
+      html,
     });
   }
+
+  console.log('[QA] Extracting Figma nodes');
+  const figmaNodes = await figmaService.extractFile(fileId, { nodeId, pageName: figmaPageName });
+  console.log(`[QA] Figma nodes extracted: ${figmaNodes.length}`);
 
   try {
     console.log(`[QA] Capturing target page: ${pageUrl}`);
@@ -146,6 +159,7 @@ async function runFastServerlessQA({
   figmaService,
   mappingEngine,
   comparisonEngine,
+  html,
 }: {
   figmaNodes: UINode[];
   fileId: string;
@@ -153,10 +167,11 @@ async function runFastServerlessQA({
   figmaService: FigmaService;
   mappingEngine: MappingEngine;
   comparisonEngine: ComparisonEngine;
+  html?: string;
 }) {
   console.log(`[QA] Running fast deployed analysis for ${pageUrl}`);
-  const html = await fetchTargetHtml(pageUrl);
-  const targetSnapshot = buildTargetSnapshotFromHtml(html, pageUrl);
+  const resolvedHtml = typeof html === 'string' ? html : await fetchTargetHtml(pageUrl).catch(() => '');
+  const targetSnapshot = buildTargetSnapshotFromHtml(resolvedHtml, pageUrl);
   const initialDesignMatch = analyzeSignalIdentity(figmaNodes, targetSnapshot.nodes, pageUrl);
   const matches = mappingEngine.matchNodes(figmaNodes, targetSnapshot.nodes);
   const results = comparisonEngine.compare(matches);
@@ -843,23 +858,4 @@ function parseFigmaTarget(figmaUrl: string, explicitNodeId?: string) {
 
   try {
     const figmaUrlObj = new URL(figmaUrl);
-    const fileIdMatch = figmaUrlObj.pathname.match(/(?:file|design|proto|board)\/([a-zA-Z0-9\-_]+)/);
-    if (fileIdMatch) {
-      fileId = fileIdMatch[1];
-      nodeId = figmaUrlObj.searchParams.get('node-id')?.replace(/-/g, ':').replace(/%3A/gi, ':') || '';
-    }
-  } catch {
-    if (/^[a-zA-Z0-9\-_]{15,60}$/.test(figmaUrl)) fileId = figmaUrl;
-  }
-
-  if (explicitNodeId) nodeId = explicitNodeId.trim().replace(/-/g, ':').replace(/%3A/gi, ':');
-  if (!fileId) throw httpError(400, 'Invalid Figma URL or key. Expected https://www.figma.com/design/:id/... or a valid file key.');
-
-  return { fileId, nodeId };
-}
-
-function httpError(statusCode: number, message: string) {
-  const error = new Error(message) as Error & { statusCode: number };
-  error.statusCode = statusCode;
-  return error;
-}
+    con

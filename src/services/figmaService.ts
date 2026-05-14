@@ -2,10 +2,11 @@ import axios from 'axios';
 import type { Layout, Styles, UINode } from '../types';
 
 const FIGMA_API_BASE = 'https://api.figma.com/v1';
-const DEFAULT_MAX_FIGMA_NODES = Number(process.env.MAX_FIGMA_NODES || 250);
-const DEFAULT_FIGMA_DEPTH = Number(process.env.FIGMA_FILE_DEPTH || 3);
-const FIGMA_REQUEST_TIMEOUT_MS = Number(process.env.FIGMA_REQUEST_TIMEOUT_MS || 45000);
-const FIGMA_REQUEST_RETRIES = Number(process.env.FIGMA_REQUEST_RETRIES || 5);
+const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY);
+const DEFAULT_MAX_FIGMA_NODES = Number(process.env.MAX_FIGMA_NODES || (IS_SERVERLESS ? 70 : 250));
+const DEFAULT_FIGMA_DEPTH = Number(process.env.FIGMA_FILE_DEPTH || (IS_SERVERLESS ? 2 : 3));
+const FIGMA_REQUEST_TIMEOUT_MS = Number(process.env.FIGMA_REQUEST_TIMEOUT_MS || (IS_SERVERLESS ? 8000 : 45000));
+const FIGMA_REQUEST_RETRIES = Number(process.env.FIGMA_REQUEST_RETRIES || (IS_SERVERLESS ? 1 : 5));
 
 export class FigmaService {
   private fileCache = new Map<string, any>();
@@ -204,8 +205,4 @@ export class FigmaService {
     };
   }
 
-  private figmaColorToHex(color: { r: number; g: number; b: number }): string {
-    const toHex = (channel: number) => Math.round(channel * 255).toString(16).padStart(2, '0');
-    return `#${toHex(color.r)}${toHex(color.g)}${toHex(color.b)}`;
-  }
-}
+  private figmaColorToHex(color: { r: numbe

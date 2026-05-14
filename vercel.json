@@ -3,10 +3,8 @@
   "outputDirectory": "dist",
   "functions": {
     "api/qa/run.ts": {
-      "maxDuration": 60
+      "maxDuration": 30,
+      "memory": 1024
     },
     "api/github/issues/bulk.ts": {
-      "maxDuration": 60
-    }
-  }
-}
+      "maxDura
